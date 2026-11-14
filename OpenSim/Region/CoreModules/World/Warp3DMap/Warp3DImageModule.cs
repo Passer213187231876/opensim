@@ -84,6 +84,8 @@ namespace OpenSim.Region.CoreModules.World.Warp3DMap
         private float m_renderMinHeight = -100f;
         private float m_renderMaxHeight = 4096f;
 
+        private string m_mapTilesDirectory = string.Empty; // directory to load/save map tile images
+
         private bool m_Enabled = false;
 
         #region Region Module interface
@@ -132,6 +134,21 @@ namespace OpenSim.Region.CoreModules.World.Warp3DMap
                 m_renderMinHeight = -100f;
             else if (m_renderMinHeight > m_renderMaxHeight - 10f)
                 m_renderMinHeight = m_renderMaxHeight - 10f;
+
+            m_mapTilesDirectory =
+                Util.GetConfigVarFromSections<string>(source, "MapTilesDirectory", configSections, m_mapTilesDirectory);
+            if(!string.IsNullOrEmpty(m_mapTilesDirectory))
+            {
+                try
+                {
+                    Directory.CreateDirectory(m_mapTilesDirectory);
+                }
+                catch(Exception e)
+                {
+                    m_log.Error($"[MAPTILE]: failed to create folder {m_mapTilesDirectory} for local map tiles {e.Message}");
+                    m_mapTilesDirectory = null;
+                }
+            }
         }
 
         public void AddRegion(Scene scene)
@@ -209,6 +226,9 @@ namespace OpenSim.Region.CoreModules.World.Warp3DMap
             Bitmap tile = GenImage();
             // image may be reloaded elsewhere, so no compression format
             string filename = "MAP-" + m_scene.RegionInfo.RegionID.ToString() + ".png";
+            if (!string.IsNullOrEmpty(m_mapTilesDirectory))
+                filename = System.IO.Path.Combine(m_mapTilesDirectory, filename);
+
             tile.Save(filename,ImageFormat.Png);
             m_primMesher = null;
             return tile;
@@ -758,7 +778,7 @@ namespace OpenSim.Region.CoreModules.World.Warp3DMap
                 return ret;
 
             AssetBase asset = m_scene.AssetService.Get(id.ToString());
-            if (asset is not null)
+            if (asset is not null && asset.Data is not null && asset.Data.Length > 2)
             {
                 try
                 {

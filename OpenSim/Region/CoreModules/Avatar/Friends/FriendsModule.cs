@@ -276,8 +276,12 @@ namespace OpenSim.Region.CoreModules.Avatar.Friends
         {
             if (!m_OnlineFriendsCache.TryGetValue(userID, out HashSet<UUID> friends))
             {
-                friends = new HashSet<UUID>();
-                m_OnlineFriendsCache[userID] = friends;
+                if(online)
+                {
+                    friends = [.. friendsOnline];
+                    m_OnlineFriendsCache[userID] = friends;
+                }
+                return;
             }
             if (online)
             {
@@ -296,8 +300,13 @@ namespace OpenSim.Region.CoreModules.Avatar.Friends
         {
             if (!m_OnlineFriendsCache.TryGetValue(userID, out HashSet<UUID> friends))
             {
-                friends = new HashSet<UUID>();
-                m_OnlineFriendsCache[userID] = friends;
+                if(online)
+                { 
+                    friends = new HashSet<UUID>([friendID]);
+                    m_OnlineFriendsCache[userID] = friends;
+                }
+                // added when going online; nothing to remove when going offline
+                return online;
             }
             if (online)
                 return friends.Add(friendID);
@@ -308,7 +317,7 @@ namespace OpenSim.Region.CoreModules.Avatar.Friends
         {
             if (m_OnlineFriendsCache.TryGetValue(userID, out HashSet<UUID> friends))
             {
-                List<UUID> friendslst = new List<UUID>(friends.Count);
+                List<UUID> friendslst = new(friends.Count);
                 foreach(UUID id in friends)
                     friendslst.Add(id);
                 return friendslst;
@@ -1094,10 +1103,10 @@ namespace OpenSim.Region.CoreModules.Avatar.Friends
                 if (online)
                 {
                     if (changed)
-                        friendClient.SendAgentOnline(new UUID[] { userID });
+                        friendClient.SendAgentOnline([userID]);
                 }
                 else
-                    friendClient.SendAgentOffline(new UUID[] { userID });
+                    friendClient.SendAgentOffline([userID]);
                 // we're done
                 return true;
             }
