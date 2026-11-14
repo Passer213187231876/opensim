@@ -262,44 +262,51 @@ namespace OpenSim.Services.HypergridService
 
             //m_log.DebugFormat("[HGFRIENDS SERVICE]: Status notification: user has {0} local friends", usersToBeNotified.Count);
 
-            PresenceInfo[] friendSessions = m_PresenceService.GetAgents(usersToBeNotified.ToArray());
-            if(friendSessions is null || friendSessions.Length == 0)
+            if (usersToBeNotified.Count == 0)
                 return [];
 
             List<UUID> localFriendsOnline = [];
 
-            foreach (PresenceInfo friendSession in friendSessions)
+            // No early return when nobody has a home presence session: friends
+            // traveling on foreign grids still need the traveling pass below.
+            PresenceInfo[] friendSessions = m_PresenceService.GetAgents(usersToBeNotified.ToArray());
+            if (friendSessions is not null && friendSessions.Length > 0)
             {
-                // Guard against agents currently traveling between regions.
-                if (friendSession.RegionID.IsZero())
-                    continue;
-
-                ForwardStatusNotificationToSim(
-                    friendSession.RegionID,
-                    foreignUserID,
-                    friendSession.UserID,
-                    online
-                );
-
-                //usersToBeNotified.Remove(friendSession.UserID.ToString());
-
-                if (online && UUID.TryParse(friendSession.UserID, out UUID id) && !localFriendsOnline.Contains(id))
+                foreach (PresenceInfo friendSession in friendSessions)
                 {
-                    localFriendsOnline.Add(id);
+                    // Guard against agents currently traveling between regions.
+                    if (friendSession.RegionID.IsZero())
+                        continue;
+
+                    ForwardStatusNotificationToSim(
+                        friendSession.RegionID,
+                        foreignUserID,
+                        friendSession.UserID,
+                        online
+                    );
+
+                    //usersToBeNotified.Remove(friendSession.UserID.ToString());
+
+                    if (online && UUID.TryParse(friendSession.UserID, out UUID id) && !localFriendsOnline.Contains(id))
+                    {
+                        localFriendsOnline.Add(id);
+                    }
                 }
             }
-
-            // Lastly, let's notify the rest who may be online somewhere else
-            // NOT SUPPORTED
 
             // Notify local friends who are currently traveling on foreign grids.
             // Friendship was already confirmed above via the per-friend secret,
             // so no extra verification is needed here.
-            if (m_UserAgentService != null && usersToBeNotified.Count > 0)
+            if (m_UserAgentService != null)
             {
-                localFriendsOnline.AddRange(
-                    TravelingFriendsNotifier.DeliverStatusToTravelers(
-                        m_UserAgentService, usersToBeNotified, foreignUserID, online));
+                // a traveler may still have a home presence entry and already be
+                // in the list from the loop above; don't report them twice
+                foreach (UUID id in TravelingFriendsNotifier.DeliverStatusToTravelers(
+                        m_UserAgentService, usersToBeNotified, foreignUserID, online))
+                {
+                    if (online && !localFriendsOnline.Contains(id))
+                        localFriendsOnline.Add(id);
+                }
             }
 
             // and finally, let's send the online friends
