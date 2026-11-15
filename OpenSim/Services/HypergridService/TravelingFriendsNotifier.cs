@@ -54,6 +54,31 @@ namespace OpenSim.Services.HypergridService
     {
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
+        /// <summary>Upper bound on candidates handled per request. Each one costs
+        /// a DB read and possibly an outbound cross-grid call, and the lists come
+        /// from public endpoints, so they must not be unbounded.</summary>
+        private const int MaxCandidatesPerRequest = 1000;
+
+        /// <summary>Parses, de-duplicates and caps the candidate list.</summary>
+        private static List<UUID> PrepareCandidates(IEnumerable<string> candidateFriendIDs, string caller)
+        {
+            HashSet<UUID> seen = [];
+            List<UUID> result = [];
+            foreach (string candidate in candidateFriendIDs)
+            {
+                if (!UUID.TryParse(candidate, out UUID id) || !seen.Add(id))
+                    continue;
+                if (result.Count >= MaxCandidatesPerRequest)
+                {
+                    m_log.WarnFormat("[TRAVELING FRIENDS NOTIFIER]: {0}: candidate list truncated to {1} entries",
+                        caller, MaxCandidatesPerRequest);
+                    break;
+                }
+                result.Add(id);
+            }
+            return result;
+        }
+
         /// <summary>Delivers a friend's status change to whichever of the given
         /// candidates turn out to be traveling on a foreign grid.</summary>
         /// <returns>Delivered friend UUIDs. Only meaningful when online is
@@ -70,11 +95,8 @@ namespace OpenSim.Services.HypergridService
             if (userAgentService is null)
                 return delivered;
 
-            foreach (string candidate in candidateFriendIDs)
+            foreach (UUID id in PrepareCandidates(candidateFriendIDs, "DeliverStatusToTravelers"))
             {
-                if (!UUID.TryParse(candidate, out UUID id))
-                    continue;
-
                 // cheap DB-only check so the common "friend is just offline"
                 // case never touches the Friends store; delivery itself is
                 // done off-thread below
@@ -110,10 +132,8 @@ namespace OpenSim.Services.HypergridService
             if (userAgentService is null)
                 return traveling;
 
-            foreach (string candidate in candidateFriendIDs)
+            foreach (UUID id in PrepareCandidates(candidateFriendIDs, "FilterTraveling"))
             {
-                if (!UUID.TryParse(candidate, out UUID id))
-                    continue;
                 if (string.IsNullOrEmpty(userAgentService.LocateUser(id)))
                     continue;
                 if (verifyFriend != null && !verifyFriend(id))
@@ -131,20 +151,40 @@ namespace OpenSim.Services.HypergridService
         /// but not, on their own, whether that friendship still grants
         /// visibility. Foreign friend rows carry secrets and are validated by
         /// StatusNotification instead.</summary>
+        /// <remarks>Use for delivery: may candidateID be told counterpartID's status?</remarks>
         internal static bool IsLocalFriend(IFriendsService friendsService, UUID candidateID, UUID counterpartID)
+        {
+            FriendInfo finfo = FindLocalFriendRow(friendsService, candidateID, counterpartID);
+            // TheirFlags here is counterpartID's grant to candidateID
+            // (this row belongs to candidateID, "Their" = the other side)
+            return finfo is not null && finfo.TheirFlags != -1
+                && (finfo.TheirFlags & (int)FriendRights.CanSeeOnline) != 0;
+        }
+
+        /// <summary>Reverse direction of IsLocalFriend: does candidateID let
+        /// counterpartID see them online? Use when revealing candidateID's
+        /// status to counterpartID (GetTravelingFriends).</summary>
+        internal static bool LetsFriendSeeOnline(IFriendsService friendsService, UUID candidateID, UUID counterpartID)
+        {
+            FriendInfo finfo = FindLocalFriendRow(friendsService, candidateID, counterpartID);
+            // MyFlags here is candidateID's own grant to counterpartID;
+            // TheirFlags == -1 marks a friendship that is still pending
+            return finfo is not null && finfo.TheirFlags != -1
+                && (finfo.MyFlags & (int)FriendRights.CanSeeOnline) != 0;
+        }
+
+        private static FriendInfo FindLocalFriendRow(IFriendsService friendsService, UUID candidateID, UUID counterpartID)
         {
             FriendInfo[] finfos = friendsService?.GetFriends(candidateID);
             if (finfos is null)
-                return false;
+                return null;
 
             string counterpartStr = counterpartID.ToString();
             foreach (FriendInfo finfo in finfos)
                 if (finfo.Friend == counterpartStr)
-                    // TheirFlags here is counterpartID's grant to candidateID
-                    // (this row belongs to candidateID, "Their" = the other side)
-                    return finfo.TheirFlags != -1 && (finfo.TheirFlags & (int)FriendRights.CanSeeOnline) != 0;
+                    return finfo;
 
-            return false;
+            return null;
         }
     }
 }

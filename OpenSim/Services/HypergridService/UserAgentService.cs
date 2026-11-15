@@ -377,6 +377,17 @@ namespace OpenSim.Services.HypergridService
             // m_GridName is lowercased in the constructor while GridExternalName
             // is stored raw, so the comparison must ignore case
             HGTravelingData hgt = m_Database.Get(sessionID);
+
+            // logout_agent is a public endpoint and session IDs are known to every
+            // grid the traveler visits: never let one user's session be used to
+            // log out (and broadcast "offline" for) a different user
+            if (hgt is not null && hgt.UserID != userID)
+            {
+                m_log.WarnFormat("[USER AGENT SERVICE]: Logout for user {0} rejected: session {1} belongs to user {2}",
+                    userID, sessionID, hgt.UserID);
+                return;
+            }
+
             bool wasTravelingAbroad = hgt is not null && hgt.Data is not null
                 && hgt.Data.TryGetValue("GridExternalName", out string gridName)
                 && !m_GridName.Equals(gridName, StringComparison.InvariantCultureIgnoreCase);

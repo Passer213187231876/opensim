@@ -243,11 +243,22 @@ namespace OpenSim.Services.HypergridService
             // First, let's double check that the reported friends are, indeed, friends of that user
             // And let's check that the secret matches
             List<string> usersToBeNotified = [];
+            HashSet<UUID> checkedUsers = [];
             string foreignUserIDToString = foreignUserID.ToString();
             foreach (string uui in friends)
             {
                 if (Util.ParseUniversalUserIdentifier(uui, out UUID localUserID, out _, out _, out _, out string secret))
                 {
+                    // a bare UUID (or a UUI without secret) parses with an empty
+                    // secret, and EndsWith("") always matches: without this check
+                    // anyone could pass the friendship test for any local user
+                    if (string.IsNullOrEmpty(secret))
+                        continue;
+
+                    // one friends lookup per local user, however often it is repeated
+                    if (!checkedUsers.Add(localUserID))
+                        continue;
+
                     FriendInfo[] friendInfos = m_FriendsService.GetFriends(localUserID);
                     foreach (FriendInfo finfo in friendInfos)
                     {
@@ -255,6 +266,7 @@ namespace OpenSim.Services.HypergridService
                         {
                             // great!
                             usersToBeNotified.Add(localUserID.ToString());
+                            break;
                         }
                     }
                 }
@@ -339,9 +351,12 @@ namespace OpenSim.Services.HypergridService
             if (!IsOwnLiveSession(userID, sessionID, "gettravelingfriends"))
                 return new List<UUID>();
 
+            // this reveals the candidate's status to userID, so it is the
+            // candidate's grant to userID that matters (not the reverse, which
+            // is what IsLocalFriend checks for delivery)
             return TravelingFriendsNotifier.FilterTraveling(
                 m_UserAgentService, friends,
-                id => TravelingFriendsNotifier.IsLocalFriend(m_FriendsService, id, userID));
+                id => TravelingFriendsNotifier.LetsFriendSeeOnline(m_FriendsService, id, userID));
         }
 
         /// <summary>
