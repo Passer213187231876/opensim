@@ -859,6 +859,13 @@
     GridService = "OpenSim.Services.GridService.dll:GridService"
     PresenceService = "OpenSim.Services.PresenceService.dll:PresenceService"
 
+    ;; Restrict the grid-internal traveling-friends methods (statusnotify_traveling,
+    ;; gettravelingfriends) to this grid's own simulators, by IP. They are only ever
+    ;; called by your sims, never by other grids. Same idea as VerifyCallers for
+    ;; locate_user in [UserAgentService]. Comma-separated list of caller IPs.
+    ; VerifyCallers = false
+    ; AuthorizedCallers = "127.0.0.1"
+
 
 [HGInstantMessageService]
     LocalServiceModule  = "OpenSim.Services.HypergridService.dll:HGInstantMessageService"

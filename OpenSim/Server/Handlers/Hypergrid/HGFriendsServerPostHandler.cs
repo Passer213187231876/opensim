@@ -54,19 +54,40 @@ namespace OpenSim.Server.Handlers.Hypergrid
         private IUserAgentService m_UserAgentService;
         private IFriendsSimConnector m_FriendsLocalSimConnector;
         private IHGFriendsService m_TheService;
+        private readonly bool m_VerifyCallers;
+        private readonly HashSet<string> m_AuthorizedCallers;
 
-        public HGFriendsServerPostHandler(IHGFriendsService service, IUserAgentService uas, IFriendsSimConnector friendsConn) :
+        public HGFriendsServerPostHandler(IHGFriendsService service, IUserAgentService uas, IFriendsSimConnector friendsConn,
+                bool verifyCallers = false, string[] authorizedCallers = null) :
                 base("POST", "/hgfriends")
         {
             m_TheService = service;
             m_UserAgentService = uas;
             m_FriendsLocalSimConnector = friendsConn;
+            m_VerifyCallers = verifyCallers;
+            m_AuthorizedCallers = new HashSet<string>(authorizedCallers ?? []);
 
             m_log.DebugFormat("[HGFRIENDS HANDLER]: HGFriendsServerPostHandler is On ({0})",
                 (m_FriendsLocalSimConnector == null ? "robust" : "standalone"));
 
             if (m_TheService == null)
                 m_log.ErrorFormat("[HGFRIENDS HANDLER]: TheService is null!");
+        }
+
+        /// <summary>Optional IP allowlist (VerifyCallers / AuthorizedCallers in
+        /// [HGFriendsService]) for the grid-internal methods, the same mechanism
+        /// UserAgentService offers for locate_user.</summary>
+        private bool IsAuthorizedCaller(IOSHttpRequest httpRequest, string method)
+        {
+            if (!m_VerifyCallers)
+                return true;
+
+            string ip = httpRequest.RemoteIPEndPoint?.Address.ToString();
+            if (ip is not null && m_AuthorizedCallers.Contains(ip))
+                return true;
+
+            m_log.WarnFormat("[HGFRIENDS HANDLER]: {0} from unauthorized caller {1} rejected", method, ip ?? "(unknown)");
+            return false;
         }
 
         protected override byte[] ProcessRequest(string path, Stream requestData,
@@ -110,10 +131,15 @@ namespace OpenSim.Server.Handlers.Hypergrid
                     case "statusnotification":
                         return StatusNotification(request);
 
+                    // grid-internal: only this grid's own sims call these
                     case "statusnotify_traveling":
+                        if (!IsAuthorizedCaller(httpRequest, method))
+                            return FailureResult();
                         return StatusNotifyTraveling(request);
 
                     case "gettravelingfriends":
+                        if (!IsAuthorizedCaller(httpRequest, method))
+                            return FailureResult();
                         return GetTravelingFriends(request);
                     /*
                     case "friendship_approved":

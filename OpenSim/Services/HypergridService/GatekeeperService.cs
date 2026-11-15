@@ -318,10 +318,15 @@ namespace OpenSim.Services.HypergridService
 
         public bool StatusNotify(UUID sessionID, UUID userID, UUID friendID, bool online)
         {
-            // The session ID is the auth capability here: only the visitor's viewer and
-            // their home grid (via HGTravelingData) know it, so this can't be used by
-            // third parties to probe user locations or spoof status events. The
-            // friendship was validated by the home grid before it called us.
+            // The session ID must match the visitor's live presence here. That stops
+            // callers who only know account UUIDs, but it is not a secret: every sim
+            // and grid the visitor passed through has seen it. It adds no exposure:
+            // our sims' /friends/ statusnotification handler already accepts status
+            // events without any credential, and a user's current grid is already
+            // public through their home UserAgentService's locate_user. Stronger
+            // grid-to-grid auth would have to cover those too (see the TODO on
+            // HGFriendsService.IsOwnLiveSession). The friendship was validated by the
+            // home grid before it called us.
             PresenceInfo presence = m_PresenceService.GetAgent(sessionID);
             if (presence is null || presence.RegionID.IsZero() || presence.UserID != userID.ToString())
             {

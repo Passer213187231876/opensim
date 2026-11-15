@@ -361,10 +361,24 @@ namespace OpenSim.Services.HypergridService
 
         /// <summary>
         /// Confirms sessionID is a currently live Presence session belonging to userID
-        /// on this grid — the auth capability for the two wire methods above. Only
-        /// userID's own connected sim (or their viewer) can know this value, so it
-        /// proves the caller is genuine rather than an arbitrary third party who only
-        /// knows the account UUIDs involved.
+        /// on this grid (or one that just logged out). This stops callers who only know
+        /// account UUIDs, but it is NOT strong authentication: the session ID is not a
+        /// secret. It is sent in AgentCircuitData to every sim the user enters and to
+        /// every foreign grid they visit, so any of those operators can present it.
+        /// For grids that need more, the handler offers an IP allowlist
+        /// (VerifyCallers / AuthorizedCallers in [HGFriendsService]); these methods are
+        /// only ever called by this grid's own sims.
+        ///
+        /// Exposure compared with existing code: a session-ID holder gains nothing that
+        /// is not already reachable without any secret. Status toasts can be injected
+        /// directly through any sim's unauthenticated /friends/ statusnotification
+        /// handler, and whether a user is traveling is returned by the UserAgentService's
+        /// public locate_user.
+        ///
+        /// TODO: a real fix (service-to-service auth for grid-internal calls, a
+        /// per-session token known only to the home grid, and authenticating the sim
+        /// /friends/ handler) needs to cover those existing endpoints too, so it belongs
+        /// in a separate change, not this feature.
         /// </summary>
         private static bool IsOwnLiveSession(UUID userID, UUID sessionID, string caller)
         {

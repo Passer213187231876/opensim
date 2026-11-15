@@ -71,7 +71,15 @@ namespace OpenSim.Server.Handlers.Hypergrid
                 throw new Exception("No UserAgentService in " + m_ConfigName);
             m_UserAgentService = ServerUtils.LoadPlugin<IUserAgentService>(theService, new Object[] { config, localConn });
 
-            server.AddStreamHandler(new HGFriendsServerPostHandler(m_TheService, m_UserAgentService, localConn));
+            // Optional IP allowlist for the grid-internal methods (statusnotify_traveling,
+            // gettravelingfriends), mirroring the UserAgentService's VerifyCallers /
+            // AuthorizedCallers for locate_user. Off by default.
+            bool verifyCallers = serverConfig.GetBoolean("VerifyCallers", false);
+            string[] authorizedCallers = serverConfig.GetString("AuthorizedCallers", "127.0.0.1")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            server.AddStreamHandler(new HGFriendsServerPostHandler(m_TheService, m_UserAgentService, localConn,
+                verifyCallers, authorizedCallers));
         }
     }
 }
