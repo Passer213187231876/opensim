@@ -407,7 +407,10 @@ namespace OpenSim.Services.HypergridService
                 return false;
             }
 
-            PresenceInfo p = m_PresenceService.GetAgent(sessionID);
+            // uncached: this process's presence cache keeps a session for minutes
+            // after another process (split Robust) deleted it at logout, and every
+            // lookup would renew that stale copy, keeping a dead session usable
+            PresenceInfo p = m_PresenceService.GetAgentNoCache(sessionID);
             if (p != null && p.UserID == userID.ToString())
                 return true;
 
