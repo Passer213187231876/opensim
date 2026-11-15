@@ -356,9 +356,12 @@ namespace OpenSim.Services.Connectors.Hypergrid
         /// implement status_notify (older OpenSim); the caller should stop asking it</param>
         /// <returns>true if the remote grid found the traveler and forwarded the
         /// notification; false if the traveler isn't there or the call failed</returns>
-        public bool StatusNotify(string gatekeeperURI, UUID sessionID, UUID userID, UUID friendID, bool online, out bool notSupported)
+        /// <param name="unreachable">transport failure: timeout, refused, no route</param>
+        public bool StatusNotify(string gatekeeperURI, UUID sessionID, UUID userID, UUID friendID, bool online,
+            out bool notSupported, out bool unreachable)
         {
             notSupported = false;
+            unreachable = false;
 
             Hashtable hash = new Hashtable();
             hash["session_id"] = sessionID.ToString();
@@ -380,6 +383,7 @@ namespace OpenSim.Services.Connectors.Hypergrid
             {
                 // transport failure: the grid may just be unreachable right now
                 m_log.DebugFormat("[GATEKEEPER SERVICE CONNECTOR]: StatusNotify exception contacting {0}: {1}", gatekeeperURI, e.Message);
+                unreachable = true;
                 return false;
             }
 

@@ -87,6 +87,12 @@ namespace OpenSim.Services.HypergridService
         private const int STATUS_NOTIFY_UNSUPPORTED_MS = 3600 * 1000;
         private static readonly ExpiringCacheOS<string, bool> m_StatusNotifyUnsupported = new(60000);
 
+        // grids whose gatekeeper just failed at the transport level (timeout,
+        // refused): skipped entirely for a short while, so a dead grid costs one
+        // timeout per window instead of gatekeeper + sim timeouts per status event
+        private const int GRID_UNREACHABLE_MS = 120 * 1000;
+        private static readonly ExpiringCacheOS<string, bool> m_GridUnreachable = new(30000);
+
         public UserAgentService(IConfigSource config) : this(config, null)
         {
         }
@@ -786,9 +792,17 @@ namespace OpenSim.Services.HypergridService
                 // data and forwards grid-internally. This reaches the traveler even
                 // after intra-grid teleports we never see. Note this does network
                 // I/O; call from a worker thread.
+                if (m_GridUnreachable.ContainsKey(gridName))
+                {
+                    m_log.DebugFormat("[USER AGENT SERVICE]: {0} is traveling in {1}, which was unreachable moments ago; status of {2} skipped",
+                        userID, gridName, friendID);
+                    continue;
+                }
+
                 if (!m_StatusNotifyUnsupported.ContainsKey(gridName))
                 {
-                    bool delivered = m_GatekeeperConnector.StatusNotify(gridName, t.SessionID, userID, friendID, online, out bool notSupported);
+                    bool delivered = m_GatekeeperConnector.StatusNotify(gridName, t.SessionID, userID, friendID, online,
+                        out bool notSupported, out bool unreachable);
                     if (delivered)
                     {
                         m_log.DebugFormat("[USER AGENT SERVICE]: {0} is traveling in {1}; status of {2} delivered via its gatekeeper",
@@ -800,7 +814,16 @@ namespace OpenSim.Services.HypergridService
                         // older grid without status_notify: stop asking it for a while
                         m_StatusNotifyUnsupported.Add(gridName, true, STATUS_NOTIFY_UNSUPPORTED_MS);
                     }
-                    // else: the grid is unreachable, or it couldn't deliver (which is
+                    else if (unreachable)
+                    {
+                        // its sims are almost certainly unreachable too; don't add the
+                        // fallback's own timeout, and skip this grid for a while
+                        m_GridUnreachable.Add(gridName, true, GRID_UNREACHABLE_MS);
+                        m_log.DebugFormat("[USER AGENT SERVICE]: {0} is traveling in {1}, which is unreachable; skipping it for {2} s",
+                            userID, gridName, GRID_UNREACHABLE_MS / 1000);
+                        continue;
+                    }
+                    // else: it couldn't deliver (which is
                     // also the case in the short window after arrival before the
                     // destination sim reports the agent to presence); fall through to
                     // the stored sim URI as best effort
