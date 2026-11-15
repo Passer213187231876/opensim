@@ -811,6 +811,16 @@ namespace OpenSim.Services.HypergridService
                 // intra-grid teleports there — the pre-status_notify behavior.
                 if (t.Data.TryGetValue("RegionURI", out string storedURI) && !string.IsNullOrEmpty(storedURI))
                 {
+                    // Older home sims recorded this grid's own Robust URL here
+                    // instead of the visited sim's; posting there would silently
+                    // lose the notification while reporting it delivered.
+                    if (IsOwnGridURI(storedURI))
+                    {
+                        m_log.DebugFormat("[USER AGENT SERVICE]: {0} is traveling in {1}; stored sim URI {2} is this grid's own, status of {3} not delivered",
+                            userID, gridName, storedURI, friendID);
+                        continue;
+                    }
+
                     m_log.DebugFormat("[USER AGENT SERVICE]: {0} is traveling in {1}; forwarding status of {2} to sim {3}",
                         userID, gridName, friendID, storedURI);
                     GridRegion region = new GridRegion { ServerURI = storedURI };
@@ -821,6 +831,14 @@ namespace OpenSim.Services.HypergridService
             }
 
             return false;
+        }
+
+        private bool IsOwnGridURI(string uri)
+        {
+            if (string.IsNullOrEmpty(m_GridName))
+                return false;
+            string u = uri.EndsWith('/') ? uri : uri + "/";
+            return m_GridName.Equals(u, StringComparison.InvariantCultureIgnoreCase);
         }
 
         public string GetUUI(UUID userID, UUID targetUserID)

@@ -295,8 +295,7 @@ namespace OpenSim.Region.CoreModules.Avatar.Friends
             }
         }
 
-        /// <returns>true if the cached online state actually changed</returns>
-        public virtual bool CacheFriendOnline(UUID userID, UUID friendID, bool online)
+        public virtual void CacheFriendOnline(UUID userID, UUID friendID, bool online)
         {
             if (!m_OnlineFriendsCache.TryGetValue(userID, out HashSet<UUID> friends))
             {
@@ -305,13 +304,12 @@ namespace OpenSim.Region.CoreModules.Avatar.Friends
                     friends = new HashSet<UUID>([friendID]);
                     m_OnlineFriendsCache[userID] = friends;
                 }
-                // added when going online; nothing to remove when going offline
-                return online;
+                return;
             }
             if (online)
-                return friends.Add(friendID);
+                friends.Add(friendID);
             else
-                return friends.Remove(friendID);
+                friends.Remove(friendID);
         }
         public virtual List<UUID> GetCachedFriendsOnline(UUID userID)
         {
@@ -1092,19 +1090,14 @@ namespace OpenSim.Region.CoreModules.Avatar.Friends
             IClientAPI friendClient = LocateClientObject(friendID);
             if (friendClient is not null)
             {
-                bool changed = CacheFriendOnline(friendID, userID, online);
+                CacheFriendOnline(friendID, userID, online);
                 // the friend in this sim as root agent.
-                // Suppress only repeated "online" notifications (e.g. an HG
-                // traveler returning home triggers a fresh "online" that would
-                // pop a redundant toast). "offline" is always delivered: the
-                // cache may lack entries the viewer was told about directly
-                // (mid-session friendships, rights changes), and a suppressed
-                // offline would leave a ghost online friend until relog.
+                // Always deliver, even if the cache already had this state: the
+                // cache is per sim process and can go stale (e.g. while the user
+                // was a child agent here), so gating on it could drop a real
+                // "online" event. A repeated toast is the lesser problem.
                 if (online)
-                {
-                    if (changed)
-                        friendClient.SendAgentOnline([userID]);
-                }
+                    friendClient.SendAgentOnline([userID]);
                 else
                     friendClient.SendAgentOffline([userID]);
                 // we're done
