@@ -773,9 +773,7 @@ namespace OpenSim.Region.CoreModules.Avatar.Friends
             // Try Local
             if (LocalFriendshipApproved(client.AgentId, client.Name, friendID))
             {
-                // keep the online cache in sync with what the viewer is told,
-                // so the state-change gate in LocalStatusNotification doesn't
-                // later swallow this friend's status changes
+                // keep the online cache in sync with what the viewer is told
                 CacheFriendOnline(client.AgentId, friendID, true);
                 client.SendAgentOnline(new UUID[] { friendID });
                 return;
