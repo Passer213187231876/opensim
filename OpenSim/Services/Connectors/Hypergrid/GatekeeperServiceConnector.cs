@@ -357,11 +357,13 @@ namespace OpenSim.Services.Connectors.Hypergrid
         /// <returns>true if the remote grid found the traveler and forwarded the
         /// notification; false if the traveler isn't there or the call failed</returns>
         /// <param name="unreachable">transport failure: timeout, refused, no route</param>
+        /// <param name="noSession">the grid has no presence for sessionID</param>
         public bool StatusNotify(string gatekeeperURI, UUID sessionID, UUID userID, UUID friendID, bool online,
-            out bool notSupported, out bool unreachable)
+            out bool notSupported, out bool unreachable, out bool noSession)
         {
             notSupported = false;
             unreachable = false;
+            noSession = false;
 
             Hashtable hash = new Hashtable();
             hash["session_id"] = sessionID.ToString();
@@ -408,6 +410,8 @@ namespace OpenSim.Services.Connectors.Hypergrid
                 hash = (Hashtable)response.Value;
                 bool delivered = false;
                 Boolean.TryParse((string)hash["result"], out delivered);
+                if (hash.ContainsKey("no_session"))
+                    Boolean.TryParse((string)hash["no_session"], out noSession);
                 return delivered;
             }
             catch (Exception e)

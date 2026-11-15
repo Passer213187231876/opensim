@@ -316,8 +316,9 @@ namespace OpenSim.Services.HypergridService
             return region;
         }
 
-        public bool StatusNotify(UUID sessionID, UUID userID, UUID friendID, bool online)
+        public bool StatusNotify(UUID sessionID, UUID userID, UUID friendID, bool online, out bool noSession)
         {
+            noSession = false;
             // The session ID must match the visitor's live presence here. That stops
             // callers who only know account UUIDs, but it is not a secret: every sim
             // and grid the visitor passed through has seen it. It adds no exposure:
@@ -333,6 +334,10 @@ namespace OpenSim.Services.HypergridService
             PresenceInfo presence = m_PresenceService.GetAgentNoCache(sessionID);
             if (presence is null || presence.RegionID.IsZero() || presence.UserID != userID.ToString())
             {
+                // reported to the home grid so it can drop a travel record that
+                // keeps pointing here after the visitor is gone (it waits for a
+                // repeat before doing so: right after arrival this is normal too)
+                noSession = presence is null;
                 // visible refusal rather than a silent false: a null presence is normal
                 // (visitor not arrived yet or already gone — the home grid falls back to
                 // the stored sim URI), but a user mismatch means a bad or spoofed capability

@@ -93,6 +93,12 @@ namespace OpenSim.Services.HypergridService
         private const int GRID_UNREACHABLE_MS = 120 * 1000;
         private static readonly ExpiringCacheOS<string, bool> m_GridUnreachable = new(30000);
 
+        // travel sessions the visited grid reported as unknown ("no_session"), with
+        // the time of the first such answer. Right after arrival that is normal, so
+        // the record is only dropped if the answer repeats after the grace period.
+        private const int STALE_SESSION_GRACE_MS = 120 * 1000;
+        private static readonly ExpiringCacheOS<UUID, DateTime> m_NoSessionSince = new(60000);
+
         public UserAgentService(IConfigSource config) : this(config, null)
         {
         }
@@ -333,6 +339,13 @@ namespace OpenSim.Services.HypergridService
             // Everything is ok
 
             StoreTravelInfo(travel);
+
+            // A viewer login ends every earlier session of this user, so travel
+            // records of other sessions are leftovers (e.g. the visited grid's sim
+            // crashed and no logout_agent ever came). Left alone they make the user
+            // look like a traveler, hence online, to friends for up to 2 days.
+            if (fromLogin)
+                DeleteOtherTravelRecords(agentCircuit.AgentID, agentCircuit.SessionID);
 
             return true;
         }
@@ -774,6 +787,23 @@ namespace OpenSim.Services.HypergridService
             return string.Empty;
         }
 
+        private void DeleteOtherTravelRecords(UUID userID, UUID keepSessionID)
+        {
+            HGTravelingData[] hgts = m_Database.GetSessions(userID);
+            if (hgts is null)
+                return;
+            foreach (HGTravelingData t in hgts)
+            {
+                if (t.SessionID == keepSessionID)
+                    continue;
+                m_Database.Delete(t.SessionID);
+                m_NoSessionSince.Remove(t.SessionID);
+                m_log.DebugFormat("[USER AGENT SERVICE]: login of {0}: removed leftover travel record of session {1} ({2})",
+                    userID, t.SessionID,
+                    t.Data is not null && t.Data.TryGetValue("GridExternalName", out string g) ? g : "?");
+            }
+        }
+
         public bool StatusNotifyTravelingAgent(UUID userID, UUID friendID, bool online)
         {
             HGTravelingData[] hgts = m_Database.GetSessions(userID);
@@ -802,9 +832,10 @@ namespace OpenSim.Services.HypergridService
                 if (!m_StatusNotifyUnsupported.ContainsKey(gridName))
                 {
                     bool delivered = m_GatekeeperConnector.StatusNotify(gridName, t.SessionID, userID, friendID, online,
-                        out bool notSupported, out bool unreachable);
+                        out bool notSupported, out bool unreachable, out bool noSession);
                     if (delivered)
                     {
+                        m_NoSessionSince.Remove(t.SessionID);
                         m_log.DebugFormat("[USER AGENT SERVICE]: {0} is traveling in {1}; status of {2} delivered via its gatekeeper",
                             userID, gridName, friendID);
                         return true;
@@ -822,6 +853,21 @@ namespace OpenSim.Services.HypergridService
                         m_log.DebugFormat("[USER AGENT SERVICE]: {0} is traveling in {1}, which is unreachable; skipping it for {2} s",
                             userID, gridName, GRID_UNREACHABLE_MS / 1000);
                         continue;
+                    }
+                    else if (noSession)
+                    {
+                        // the visited grid has no such session (any more)
+                        DateTime now = DateTime.UtcNow;
+                        if (!m_NoSessionSince.TryGetValue(t.SessionID, out DateTime first))
+                            m_NoSessionSince.Add(t.SessionID, now, 3 * STALE_SESSION_GRACE_MS);
+                        else if ((now - first).TotalMilliseconds >= STALE_SESSION_GRACE_MS)
+                        {
+                            m_Database.Delete(t.SessionID);
+                            m_NoSessionSince.Remove(t.SessionID);
+                            m_log.DebugFormat("[USER AGENT SERVICE]: {0} is no longer in {1} (unknown session there since {2:HH:mm:ss} UTC); removed the stale travel record",
+                                userID, gridName, first);
+                            continue;
+                        }
                     }
                     // else: it couldn't deliver (which is
                     // also the case in the short window after arrival before the

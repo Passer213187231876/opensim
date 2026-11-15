@@ -154,11 +154,14 @@ namespace OpenSim.Server.Handlers.Hypergrid
                 Boolean.TryParse((string)requestData["online"], out online);
 
             bool delivered = false;
+            bool noSession = false;
             if (!sessionID.IsZero() && !userID.IsZero() && !friendID.IsZero())
-                delivered = m_GatekeeperService.StatusNotify(sessionID, userID, friendID, online);
+                delivered = m_GatekeeperService.StatusNotify(sessionID, userID, friendID, online, out noSession);
 
             Hashtable hash = new Hashtable();
             hash["result"] = delivered ? "true" : "false";
+            if (noSession)
+                hash["no_session"] = "true";
 
             XmlRpcResponse response = new XmlRpcResponse();
             response.Value = hash;

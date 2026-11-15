@@ -69,7 +69,9 @@ namespace OpenSim.Services.Interfaces
         /// <param name="friendID">The friend whose status changed</param>
         /// <param name="online">true = came online, false = went offline</param>
         /// <returns>true if the visitor was found and the notification was forwarded to their sim</returns>
-        bool StatusNotify(UUID sessionID, UUID userID, UUID friendID, bool online);
+        /// <param name="noSession">true when this grid has no presence at all for
+        /// sessionID (visitor gone, or not arrived yet), as opposed to other refusals</param>
+        bool StatusNotify(UUID sessionID, UUID userID, UUID friendID, bool online, out bool noSession);
     }
 
     public interface IUserAgentService
