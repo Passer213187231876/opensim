@@ -978,11 +978,40 @@ namespace OpenSim.Region.CoreModules.Avatar.Friends
                 // Update the local cache
                 RecacheFriends(friendClient);
 
+                // The accepter is online (they just accepted), but viewers add the new
+                // buddy as offline and the online list is only sent at login, so the
+                // offerer would see the accepter offline until one of them relogs.
+                if (AccepterGrantsOnline(userID, friendID))
+                {
+                    CacheFriendOnline(friendID, userID, true);
+                    friendClient.SendAgentOnline([userID]);
+                }
+
                 // we're done
                 return true;
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Whether the accepter of a new friendship lets the offerer see their online
+        /// status. New friendships are stored with CanSeeOnline both ways, so this is
+        /// normally true; it is checked anyway from whichever rows this grid has.
+        /// </summary>
+        private bool AccepterGrantsOnline(UUID accepterID, UUID offererID)
+        {
+            // offerer's view (local offerer; a visitor's cache misses HG rows keyed by UUI)
+            FriendInfo fi = GetFriend(GetFriendsFromCache(offererID), accepterID);
+            if (fi is not null)
+                return fi.TheirFlags != -1 && (fi.TheirFlags & (int)FriendRights.CanSeeOnline) != 0;
+
+            // accepter's own row (local accepter)
+            FriendInfo[] accepterFriends = AreFriendsCached(accepterID)
+                ? GetFriendsFromCache(accepterID)
+                : FriendsService.GetFriends(accepterID);
+            fi = GetFriend(accepterFriends ?? EMPTY_FRIENDS, offererID);
+            return fi is not null && (fi.MyFlags & (int)FriendRights.CanSeeOnline) != 0;
         }
 
         public bool LocalFriendshipDenied(UUID userID, string userName, UUID friendID)
