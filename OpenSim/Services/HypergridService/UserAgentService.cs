@@ -77,6 +77,9 @@ namespace OpenSim.Services.HypergridService
         protected static bool m_ShowDetails;
 
         protected static bool m_BypassClientVerification;
+        // [PresenceService] AllowDuplicatePresences: a user may then have several
+        // live sessions, so a new login does not prove the earlier ones dead
+        protected static bool m_AllowDuplicatePresences;
 
         private static readonly Dictionary<int, bool> m_ForeignTripsAllowed = new();
         private static readonly Dictionary<int, List<string>> m_TripsAllowedExceptions = new();
@@ -131,6 +134,10 @@ namespace OpenSim.Services.HypergridService
                 string userAccountService = serverConfig.GetString("UserAccountService", string.Empty);
 
                 m_BypassClientVerification = serverConfig.GetBoolean("BypassClientVerification", false);
+
+                IConfig presenceConfig = config.Configs["PresenceService"];
+                if (presenceConfig is not null)
+                    m_AllowDuplicatePresences = presenceConfig.GetBoolean("AllowDuplicatePresences", false);
 
                 if (gridService.Length == 0 || gridUserService.Length == 0 || gatekeeperService.Length == 0)
                     throw new Exception("Incomplete specifications, UserAgent Service cannot function.");
@@ -344,7 +351,9 @@ namespace OpenSim.Services.HypergridService
             // records of other sessions are leftovers (e.g. the visited grid's sim
             // crashed and no logout_agent ever came). Left alone they make the user
             // look like a traveler, hence online, to friends for up to 2 days.
-            if (fromLogin)
+            // Not with AllowDuplicatePresences: another session may be live abroad
+            // and still needs its record (VerifyAgent, logout_agent).
+            if (fromLogin && !m_AllowDuplicatePresences)
                 DeleteOtherTravelRecords(agentCircuit.AgentID, agentCircuit.SessionID);
 
             return true;
