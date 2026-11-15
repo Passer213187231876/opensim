@@ -269,6 +269,19 @@ namespace OpenSim.Services.HypergridService
                 return false;
             }
 
+            // /homeagent is a public endpoint. Only the login service starts new
+            // sessions; any other caller (a sim moving the agent on) must present a
+            // session we already know for this user. Without this, anyone could
+            // record a local user as traveling to a grid of their choice, and that
+            // "grid" would then be sent the status of the user's friends.
+            if (!fromLogin && !IsKnownSession(agentCircuit.AgentID, agentCircuit.SessionID))
+            {
+                m_log.WarnFormat("[USER AGENT SERVICE]: Refusing to launch {0} {1} ({2}) to {3}: session {4} is not a known session of this user",
+                    agentCircuit.firstname, agentCircuit.lastname, agentCircuit.AgentID, gatekeeper.ServerURI, agentCircuit.SessionID);
+                reason = "Unknown session";
+                return false;
+            }
+
             bool sameGrid = m_GridName.Equals(gridName, StringComparison.InvariantCultureIgnoreCase);
 
             // Is this user allowed to go there?
@@ -362,6 +375,25 @@ namespace OpenSim.Services.HypergridService
         public bool LoginAgentToGrid(GridRegion source, AgentCircuitData agentCircuit, GridRegion gatekeeper, GridRegion finalDestination, out string reason)
         {
             return LoginAgentToGrid(source, agentCircuit, gatekeeper, finalDestination, false, out reason);
+        }
+
+        /// <summary>
+        /// Whether sessionID is a session of userID that this grid already knows:
+        /// it has a travel record (written at login and at every grid crossing),
+        /// or a live presence here (first departure on setups where the login
+        /// service does not write travel records).
+        /// </summary>
+        private bool IsKnownSession(UUID userID, UUID sessionID)
+        {
+            if (sessionID.IsZero())
+                return false;
+
+            HGTravelingData hgt = m_Database.Get(sessionID);
+            if (hgt is not null)
+                return hgt.UserID == userID;
+
+            PresenceInfo presence = m_PresenceService?.GetAgentNoCache(sessionID);
+            return presence is not null && presence.UserID == userID.ToString();
         }
 
         TravelingAgentInfo CreateTravelInfo(AgentCircuitData agentCircuit, GridRegion region, bool fromLogin, string regionServerURI, out TravelingAgentInfo existing)
