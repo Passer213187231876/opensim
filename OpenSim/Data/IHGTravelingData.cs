@@ -52,6 +52,14 @@ namespace OpenSim.Data
     {
         HGTravelingData Get(UUID sessionID);
         HGTravelingData[] GetSessions(UUID userID);
+
+        /// <summary>
+        /// All records whose GridExternalName differs from homeGridURI, i.e. the
+        /// users currently on other grids. One query for what would otherwise be
+        /// one GetSessions per user asked about. The comparison may or may not be
+        /// case sensitive depending on the store; callers compare again.
+        /// </summary>
+        HGTravelingData[] GetOutside(string homeGridURI);
         bool Store(HGTravelingData data);
         bool Delete(UUID sessionID);
         void DeleteOld();

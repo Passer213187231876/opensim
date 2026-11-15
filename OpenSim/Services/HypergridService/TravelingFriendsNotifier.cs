@@ -40,9 +40,9 @@ namespace OpenSim.Services.HypergridService
 {
     /// <summary>
     /// Given local friend-ID candidates that have no live local presence,
-    /// determines which are traveling on a foreign grid (one cheap indexed
-    /// LocateUser read per candidate, so the common "simply offline" case
-    /// never touches the Friends store) and either delivers their status or
+    /// determines which are traveling on a foreign grid (one lookup for the
+    /// whole list, so the common "simply offline" case costs nothing per
+    /// candidate and never touches the Friends store) and either delivers their status or
     /// reports which are traveling. Shared by HGFriendsService.StatusNotification
     /// (local branch), HGFriendsService.StatusNotifyTravelingFriends/
     /// GetTravelingFriends (the statusnotify_traveling / gettravelingfriends
@@ -95,14 +95,12 @@ namespace OpenSim.Services.HypergridService
             if (userAgentService is null)
                 return delivered;
 
-            foreach (UUID id in PrepareCandidates(candidateFriendIDs, "DeliverStatusToTravelers"))
+            // one lookup for the whole list, so the common "friend is just offline"
+            // case costs nothing per candidate and never touches the Friends
+            // store; delivery itself is done off-thread below
+            foreach (UUID id in userAgentService.FilterTravelingUsers(
+                    PrepareCandidates(candidateFriendIDs, "DeliverStatusToTravelers")))
             {
-                // cheap DB-only check so the common "friend is just offline"
-                // case never touches the Friends store; delivery itself is
-                // done off-thread below
-                if (string.IsNullOrEmpty(userAgentService.LocateUser(id)))
-                    continue;
-
                 if (verifyFriend != null && !verifyFriend(id))
                     continue;
 
@@ -132,10 +130,9 @@ namespace OpenSim.Services.HypergridService
             if (userAgentService is null)
                 return traveling;
 
-            foreach (UUID id in PrepareCandidates(candidateFriendIDs, "FilterTraveling"))
+            foreach (UUID id in userAgentService.FilterTravelingUsers(
+                    PrepareCandidates(candidateFriendIDs, "FilterTraveling")))
             {
-                if (string.IsNullOrEmpty(userAgentService.LocateUser(id)))
-                    continue;
                 if (verifyFriend != null && !verifyFriend(id))
                     continue;
                 traveling.Add(id);

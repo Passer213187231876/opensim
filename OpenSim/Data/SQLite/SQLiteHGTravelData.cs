@@ -62,6 +62,16 @@ namespace OpenSim.Data.SQLite
             return base.Get("UserID", userID.ToString());
         }
 
+        public HGTravelingData[] GetOutside(string homeGridURI)
+        {
+            using (SQLiteCommand cmd = new SQLiteCommand())
+            {
+                cmd.CommandText = String.Format("select * from {0} where lower(GridExternalName) <> lower(:home)", m_Realm);
+                cmd.Parameters.Add(new SQLiteParameter(":home", homeGridURI));
+                return DoQuery(cmd);
+            }
+        }
+
         public bool Delete(UUID sessionID)
         {
             return Delete("SessionID", sessionID.ToString());

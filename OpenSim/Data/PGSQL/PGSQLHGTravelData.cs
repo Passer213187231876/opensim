@@ -61,6 +61,11 @@ namespace OpenSim.Data.PGSQL
             return base.Get("UserID", userID.ToString());
         }
 
+        public HGTravelingData[] GetOutside(string homeGridURI)
+        {
+            return base.Get("lower(\"GridExternalName\") <> lower(:home)", new NpgsqlParameter("home", homeGridURI));
+        }
+
         public bool Delete(UUID sessionID)
         {
             return Delete("SessionID", sessionID.ToString());

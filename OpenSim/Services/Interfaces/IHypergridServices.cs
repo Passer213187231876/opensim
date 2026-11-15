@@ -109,6 +109,20 @@ namespace OpenSim.Services.Interfaces
         string LocateUser(UUID userID);
 
         /// <summary>
+        /// Returns those of the given local users who are currently traveling on
+        /// another grid. Same answer as LocateUser for each one; implementations
+        /// that own the travel data can answer for the whole list at once.
+        /// </summary>
+        List<UUID> FilterTravelingUsers(IEnumerable<UUID> userIDs)
+        {
+            List<UUID> traveling = new();
+            foreach (UUID id in userIDs)
+                if (!string.IsNullOrEmpty(LocateUser(id)))
+                    traveling.Add(id);
+            return traveling;
+        }
+
+        /// <summary>
         /// Sends a friend status notification to a local user who is traveling on a
         /// foreign grid. Prefers handing delivery to the visited grid's gatekeeper
         /// (status_notify), which resolves the traveler's current sim from its own

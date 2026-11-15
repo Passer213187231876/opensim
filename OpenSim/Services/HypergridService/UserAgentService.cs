@@ -96,6 +96,17 @@ namespace OpenSim.Services.HypergridService
         private const int GRID_UNREACHABLE_MS = 120 * 1000;
         private static readonly ExpiringCacheOS<string, bool> m_GridUnreachable = new(30000);
 
+        // Users currently on other grids (user -> grid), loaded with one query and
+        // kept briefly. Friend-status handling asks "which of these N friends are
+        // traveling?" on every login and logout; one read per friend made that
+        // cost grow with the friend list. This process drops the copy whenever it
+        // changes a record that matters, so the age limit only bounds how long a
+        // change made by another Robust process sharing the store goes unseen.
+        private const int TRAVELERS_CACHE_MS = 10 * 1000;
+        private static readonly object m_TravelersLock = new();
+        private static Dictionary<UUID, string> m_Travelers;
+        private static long m_TravelersLoadedAt;
+
         // travel sessions the visited grid reported as unknown ("no_session"), with
         // the time of the first such answer. Right after arrival that is normal, so
         // the record is only dropped if the answer repeats after the grace period.
@@ -351,7 +362,10 @@ namespace OpenSim.Services.HypergridService
                 if (old is not null)
                     StoreTravelInfo(old);
                 else
+                {
                     m_Database.Delete(agentCircuit.SessionID);
+                    TravelRecordChanged(agentCircuit.AgentID, false);
+                }
 
                 return false;
             }
@@ -453,6 +467,7 @@ namespace OpenSim.Services.HypergridService
                 && !m_GridName.Equals(gridName, StringComparison.InvariantCultureIgnoreCase);
 
             m_Database.Delete(sessionID);
+            TravelRecordChanged(userID, false);
 
             GridUserInfo guinfo = m_GridUserService.GetGridUserInfo(userID.ToString());
             if (guinfo is not null)
@@ -838,11 +853,84 @@ namespace OpenSim.Services.HypergridService
                 if (t.SessionID == keepSessionID)
                     continue;
                 m_Database.Delete(t.SessionID);
+                TravelRecordChanged(userID, false);
                 m_NoSessionSince.Remove(t.SessionID);
                 m_log.DebugFormat("[USER AGENT SERVICE]: login of {0}: removed leftover travel record of session {1} ({2})",
                     userID, t.SessionID,
                     t.Data is not null && t.Data.TryGetValue("GridExternalName", out string g) ? g : "?");
             }
+        }
+
+        private Dictionary<UUID, string> GetTravelers()
+        {
+            lock (m_TravelersLock)
+            {
+                if (m_Travelers is not null && Environment.TickCount64 - m_TravelersLoadedAt < TRAVELERS_CACHE_MS)
+                    return m_Travelers;
+            }
+
+            Dictionary<UUID, string> travelers = new();
+            HGTravelingData[] rows = m_Database.GetOutside(m_GridName);
+            if (rows is not null)
+            {
+                foreach (HGTravelingData t in rows)
+                {
+                    // same test as LocateUser: the store's comparison may differ in case
+                    if (t.Data is not null && t.Data.TryGetValue("GridExternalName", out string grid)
+                            && !m_GridName.Equals(grid, StringComparison.InvariantCultureIgnoreCase))
+                        travelers[t.UserID] = grid;
+                }
+            }
+
+            lock (m_TravelersLock)
+            {
+                m_Travelers = travelers;
+                m_TravelersLoadedAt = Environment.TickCount64;
+            }
+            return travelers;
+        }
+
+        /// <summary>Call after storing or deleting a travel record: drops the cached
+        /// travelers if the change can affect them (the user is now abroad, or was
+        /// listed as abroad). Ordinary home logins and logouts leave the cache alone.</summary>
+        private static void TravelRecordChanged(UUID userID, bool nowAbroad)
+        {
+            lock (m_TravelersLock)
+            {
+                if (m_Travelers is not null && (nowAbroad || m_Travelers.ContainsKey(userID)))
+                    m_Travelers = null;
+            }
+        }
+
+        private bool IsForeignGrid(string gridExternalName)
+        {
+            return !string.IsNullOrEmpty(gridExternalName)
+                && !m_GridName.Equals(gridExternalName, StringComparison.InvariantCultureIgnoreCase);
+        }
+
+        public List<UUID> FilterTravelingUsers(IEnumerable<UUID> userIDs)
+        {
+            List<UUID> traveling = new();
+            Dictionary<UUID, string> travelers;
+            try
+            {
+                travelers = GetTravelers();
+            }
+            catch (Exception e)
+            {
+                // e.g. a third-party store without the bulk query: ask per user
+                m_log.DebugFormat("[USER AGENT SERVICE]: bulk traveler lookup failed ({0}); using per-user lookups", e.Message);
+                foreach (UUID id in userIDs)
+                    if (!string.IsNullOrEmpty(LocateUser(id)))
+                        traveling.Add(id);
+                return traveling;
+            }
+
+            if (travelers.Count > 0)
+                foreach (UUID id in userIDs)
+                    if (travelers.ContainsKey(id))
+                        traveling.Add(id);
+            return traveling;
         }
 
         public bool StatusNotifyTravelingAgent(UUID userID, UUID friendID, bool online)
@@ -904,6 +992,7 @@ namespace OpenSim.Services.HypergridService
                         else if ((now - first).TotalMilliseconds >= STALE_SESSION_GRACE_MS)
                         {
                             m_Database.Delete(t.SessionID);
+                            TravelRecordChanged(userID, false);
                             m_NoSessionSince.Remove(t.SessionID);
                             m_log.DebugFormat("[USER AGENT SERVICE]: {0} is no longer in {1} (unknown session there since {2:HH:mm:ss} UTC); removed the stale travel record",
                                 userID, gridName, first);
@@ -1032,6 +1121,7 @@ namespace OpenSim.Services.HypergridService
             };
 
             m_Database.Store(hgt);
+            TravelRecordChanged(travel.UserID, IsForeignGrid(travel.GridExternalName));
         }
         #endregion
 

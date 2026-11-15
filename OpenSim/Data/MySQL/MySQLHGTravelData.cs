@@ -61,6 +61,16 @@ namespace OpenSim.Data.MySQL
             return base.Get("UserID", userID.ToString());
         }
 
+        public HGTravelingData[] GetOutside(string homeGridURI)
+        {
+            using (MySqlCommand cmd = new MySqlCommand())
+            {
+                cmd.CommandText = String.Format("select * from {0} where GridExternalName <> ?home", m_Realm);
+                cmd.Parameters.AddWithValue("?home", homeGridURI);
+                return DoQuery(cmd);
+            }
+        }
+
         public bool Delete(UUID sessionID)
         {
             return Delete("SessionID", sessionID.ToString());
