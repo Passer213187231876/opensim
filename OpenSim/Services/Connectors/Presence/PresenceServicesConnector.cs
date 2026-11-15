@@ -375,6 +375,13 @@ namespace OpenSim.Services.Connectors
             return false;
         }
 
+        // the remote presence service is the process the sims report to, so
+        // its answer is already current; there is no local cache to bypass
+        public PresenceInfo GetAgentNoCache(UUID sessionID)
+        {
+            return GetAgent(sessionID);
+        }
+
         #endregion
 
     }

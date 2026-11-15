@@ -131,5 +131,13 @@ namespace OpenSim.Services.Interfaces
 
         GridUserInfo GetGridUserInfo(string userID);
         GridUserInfo[] GetGridUserInfo(string[] userID);
+
+        /// <summary>
+        /// Like GetGridUserInfo, but reads the record from the store instead of a
+        /// process-local cache, for callers in a process that does not handle the
+        /// user's logins/logouts itself (split Robust). Connectors to a remote
+        /// service already get that service's current answer, hence the default.
+        /// </summary>
+        GridUserInfo GetGridUserInfoNoCache(string userID) => GetGridUserInfo(userID);
     }
 }

@@ -107,6 +107,24 @@ namespace OpenSim.Services.HypergridService
 
                 m_FriendsSimConnector = new FriendsSimConnector();
 
+                // Lets a just-logged-out user's offline notice to traveling friends
+                // pass when the logout was handled by another Robust process (split
+                // setups), via the shared GridUser logout time. Optional: without it
+                // only the in-process recent-logout window applies.
+                theService = serverConfig.GetString("GridUserService",
+                    "OpenSim.Services.UserAccountService.dll:GridUserService");
+                try
+                {
+                    m_GridUserService = ServerUtils.LoadPlugin<IGridUserService>(theService, args);
+                }
+                catch (Exception e)
+                {
+                    m_log.DebugFormat("[HGFRIENDS SERVICE]: GridUserService '{0}' failed to load: {1}", theService, e.Message);
+                }
+                if (m_GridUserService == null)
+                    m_log.WarnFormat("[HGFRIENDS SERVICE]: Could not load GridUserService '{0}'; offline notices to traveling friends rely on the in-process logout window only",
+                        theService);
+
                 // Enables status notifications for friends traveling on foreign grids.
                 // This is the same UserAgentService key HGFriendServerConnector already
                 // requires in [HGFriendsService], so it is present on standard HG setups.
@@ -333,7 +351,7 @@ namespace OpenSim.Services.HypergridService
             // auth capability: without this, anyone who knows two account UUIDs could
             // call this public endpoint directly to confirm a friendship + traveling
             // status, or inject spoofed online/offline events
-            if (!IsOwnLiveSession(userID, sessionID, "statusnotify_traveling"))
+            if (!IsOwnLiveSession(userID, sessionID, "statusnotify_traveling", offlineNotice: !online))
                 return;
 
             // public, unauthenticated-by-session-key endpoint: confirm the claimed
@@ -380,7 +398,7 @@ namespace OpenSim.Services.HypergridService
         /// /friends/ handler) needs to cover those existing endpoints too, so it belongs
         /// in a separate change, not this feature.
         /// </summary>
-        private static bool IsOwnLiveSession(UUID userID, UUID sessionID, string caller)
+        private static bool IsOwnLiveSession(UUID userID, UUID sessionID, string caller, bool offlineNotice = false)
         {
             if (sessionID.IsZero())
             {
@@ -401,13 +419,51 @@ namespace OpenSim.Services.HypergridService
             if (m_PresenceService.WasRecentlyLoggedOut(sessionID, userID))
                 return true;
 
+            // That window lives in the process that handled the logout. On a split
+            // Robust (sims log out through the private-port process, this service
+            // runs in the public-port one) it is never set here, so fall back to the
+            // shared GridUser record. It carries no session ID, so it is only good
+            // for an "offline" notice: it can only confirm what is true (this user
+            // did just log out), it never makes anyone look online.
+            if (p == null && offlineNotice && JustLoggedOut(userID))
+                return true;
+
             // rejections must be visible: a silent drop here looks identical to
             // "friend is offline" and is very hard to diagnose from the outside
             m_log.DebugFormat("[HGFRIENDS SERVICE]: {0} for user {1} rejected: session {2} is {3}",
                 caller, userID, sessionID,
-                p == null ? "not a live session nor a recent logout (split presence service, expired grace window, or a spoofed request)"
+                p == null ? "not a live session nor a recent logout (expired grace window or a spoofed request)"
                           : "live but belongs to another user");
             return false;
+        }
+
+        private const int JUST_LOGGED_OUT_SECONDS = 60; // same window as PresenceService's recent-logout cache
+
+        /// <summary>GridUser shows userID offline, with a logout in the last minute.</summary>
+        private static bool JustLoggedOut(UUID userID)
+        {
+            if (m_GridUserService == null)
+                return false;
+
+            GridUserInfo info;
+            try
+            {
+                // uncached: this process may hold the login-time copy (Online=true)
+                // while the logout was written by another process
+                info = m_GridUserService.GetGridUserInfoNoCache(userID.ToString());
+            }
+            catch (Exception e)
+            {
+                m_log.DebugFormat("[HGFRIENDS SERVICE]: GridUser lookup for {0} failed: {1}", userID, e.Message);
+                return false;
+            }
+
+            if (info == null || info.Online)
+                return false;
+
+            // small negative tolerance for clock skew between Robust hosts
+            double age = (DateTime.UtcNow - info.Logout).TotalSeconds;
+            return age >= -5 && age <= JUST_LOGGED_OUT_SECONDS;
         }
 
         #endregion IHGFriendsService

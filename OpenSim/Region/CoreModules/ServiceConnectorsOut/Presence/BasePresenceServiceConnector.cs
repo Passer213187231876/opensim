@@ -137,6 +137,11 @@ namespace OpenSim.Region.CoreModules.ServiceConnectorsOut.Presence
             return m_PresenceService.WasRecentlyLoggedOut(sessionID, userID);
         }
 
+        public PresenceInfo GetAgentNoCache(UUID sessionID)
+        {
+            return m_PresenceService.GetAgentNoCache(sessionID);
+        }
+
         #endregion
     }
 }

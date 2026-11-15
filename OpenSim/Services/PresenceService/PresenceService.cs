@@ -215,6 +215,32 @@ namespace OpenSim.Services.PresenceService
             return ret;
         }
 
+        public PresenceInfo GetAgentNoCache(UUID sessionID)
+        {
+            PresenceData data = m_Database.Get(sessionID);
+            if (data == null)
+            {
+                // gone from the store: drop any stale cached copy too
+                if (BySessionCache.TryGetValue(sessionID, out PresenceData old))
+                {
+                    BySessionCache.Remove(sessionID);
+                    // the user may have a newer session cached; only drop this one
+                    if (ByUserCache.TryGetValue(old.UserID, out PresenceData byUser) && byUser.SessionID == sessionID)
+                        ByUserCache.Remove(old.UserID);
+                }
+                return null;
+            }
+
+            BySessionCache.Add(sessionID, data, EXPIREMS);
+            ByUserCache.Add(data.UserID, data, EXPIREMS);
+
+            return new PresenceInfo()
+            {
+                UserID = data.UserID,
+                RegionID = data.RegionID
+            };
+        }
+
         public bool WasRecentlyLoggedOut(UUID sessionID, UUID userID)
         {
             return RecentlyLoggedOut.TryGetValue(sessionID, out string uid) && uid == userID.ToString();

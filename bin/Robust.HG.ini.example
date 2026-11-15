@@ -858,6 +858,10 @@
     UserAccountService = "OpenSim.Services.UserAccountService.dll:UserAccountService"
     GridService = "OpenSim.Services.GridService.dll:GridService"
     PresenceService = "OpenSim.Services.PresenceService.dll:PresenceService"
+    ;; Used to accept a just-logged-out user's offline notice to traveling friends
+    ;; when the logout went through another Robust process (split setups).
+    ;; Optional, this is the default.
+    GridUserService = "OpenSim.Services.UserAccountService.dll:GridUserService"
 
     ;; Restrict the grid-internal traveling-friends methods (statusnotify_traveling,
     ;; gettravelingfriends) to this grid's own simulators, by IP. They are only ever

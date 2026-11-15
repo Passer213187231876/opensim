@@ -114,5 +114,14 @@ namespace OpenSim.Services.Interfaces
         /// async caller can check it.
         /// </summary>
         bool WasRecentlyLoggedOut(UUID sessionID, UUID userID);
+
+        /// <summary>
+        /// Like GetAgent, but reads the session from the store instead of a
+        /// process-local cache. Use where the current region matters and the
+        /// session may have been updated by another process sharing the same
+        /// database (split Robust: sims report regions to the private-port
+        /// process, while the gatekeeper runs in the public-port one).
+        /// </summary>
+        PresenceInfo GetAgentNoCache(UUID sessionID);
     }
 }

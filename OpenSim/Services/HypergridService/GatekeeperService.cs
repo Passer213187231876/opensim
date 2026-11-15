@@ -327,7 +327,10 @@ namespace OpenSim.Services.HypergridService
             // grid-to-grid auth would have to cover those too (see the TODO on
             // HGFriendsService.IsOwnLiveSession). The friendship was validated by the
             // home grid before it called us.
-            PresenceInfo presence = m_PresenceService.GetAgent(sessionID);
+            // uncached: on a split Robust the sims report the visitor's region to the
+            // private-port process, so this process's cached copy can still have no
+            // region (arrival) or the previous one (teleport within this grid)
+            PresenceInfo presence = m_PresenceService.GetAgentNoCache(sessionID);
             if (presence is null || presence.RegionID.IsZero() || presence.UserID != userID.ToString())
             {
                 // visible refusal rather than a silent false: a null presence is normal

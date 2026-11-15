@@ -223,6 +223,13 @@ namespace OpenSim.Services.UserAccountService
             return ToInfo(d);
         }
 
+        public virtual GridUserInfo GetGridUserInfoNoCache(string userID)
+        {
+            // drop this process's copy; GetGridUserData rereads and recaches it
+            cache.Remove(userID.Length > 36 ? userID.Substring(0, 36) : userID);
+            return GetGridUserInfo(userID);
+        }
+
         public virtual GridUserInfo[] GetGridUserInfo(string[] userIDs)
         {
             List<GridUserInfo> ret = new List<GridUserInfo>();
